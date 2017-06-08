@@ -46,21 +46,21 @@ module S3encrypt
   #########################################
 
   def self.upload_key(s3client,newkeyblob,remote_filename,bucket,sse)
-      keyfile_name= remote_filename+ ".key"
-      newkeyblob64 = Base64.encode64(newkeyblob)
-      if sse == "none"
-         s3client.put_object({body: newkeyblob64,
-                               key: keyfile_name,
-                               bucket: bucket
-                               })
-      else
-        s3client.put_object({
-          body: newkeyblob64,
-          key: keyfile_name,
-          bucket: bucket,
-          server_side_encryption: sse
-          })
-      end
+    keyfile_name= remote_filename + ".key"
+    newkeyblob64 = Base64.encode64(newkeyblob)
+    if sse == "none"
+       s3client.put_object({body: newkeyblob64,
+                             key: keyfile_name,
+                             bucket: bucket
+                             })
+    else
+      s3client.put_object({
+        body: newkeyblob64,
+        key: keyfile_name,
+        bucket: bucket,
+        server_side_encryption: sse
+        })
+    end
   end
 
 
@@ -86,6 +86,23 @@ module S3encrypt
     end
   end
 
+  def self.upload_string(s3client,plaintext_key, value, remote_filename,bucket,sse)
+    s3enc = Aws::S3::Encryption::Client.new(encryption_key: plaintext_key,
+                                            client: s3client)
+    if sse == "none"
+      res = s3enc.put_object(bucket: bucket,
+                             key: remote_filename,
+                             body: value
+                             )
+    else
+      res = s3enc.put_object(bucket: bucket,
+                             key: remote_filename,
+                             server_side_encryption: sse,
+                             body: value
+                             )
+    end
+  end
+
   def self.decrypt_key(keyvalue,app_context)
     kms_client = Aws::KMS::Client.new()
     plainkey = kms_client.decrypt(
@@ -94,15 +111,15 @@ module S3encrypt
         "Application" => app_context,
         }
     )
-      return plainkey.plaintext
+    return plainkey.plaintext
   end
 
 
   def self.fetch_key(s3client,filename,bucket)
       keyfile_name= filename+ ".key"
       keyvalue=s3client.get_object(
-      key: keyfile_name,
-      bucket: bucket
+        key: keyfile_name,
+        bucket: bucket
       )
       keyval64 = Base64.decode64(keyvalue.body.read)
       return keyval64
@@ -135,19 +152,18 @@ module S3encrypt
     resp = getfile(nil, remote_filename, bucket, app_context)
     return JSON.parse(resp.body.string)
   end
-  
+
   #########################################
   # Helper method that bypasses writing a file to the system and returns a string
   # More for accessiing the data programatically so that a file does not have to be written and cleaned up
   #########################################
-  def self.getfile_as_string(remote_filename, bucket, app_context)
+  def self.getstring(remote_filename, bucket, app_context)
     resp = getfile(nil, remote_filename, bucket, app_context)
     return resp.body.string
   end
 
   def self.putfile(local_filename, remote_filename, bucket, app_context, master_key, sse="none")
     newkeyblob, newkeyplain = fetch_new_key(app_context, master_key)
-    #write_enc_key(newkeyblob,filename)
     s3client = Aws::S3::Client.new()
     upload_key(s3client,newkeyblob,remote_filename,bucket,sse)
     upload_file(s3client,newkeyplain,local_filename,remote_filename,bucket,sse)
@@ -160,5 +176,17 @@ module S3encrypt
   def self.putfile_sses3(local_filename, remote_filename, bucket, app_context, master_key)
     putfile(local_filename, remote_filename, bucket, app_context, master_key,"AES256")
   end
+
+  #########################################
+  # Helper method that bypasses writing any data to file locally for
+  # encrypting and storing string values.
+  #########################################
+  def self.putstring(value,remote_filename, bucket, app_context, master_key, sse="none")
+    newkeyblob, newkeyplain = fetch_new_key(app_context, master_key)
+    s3client = Aws::S3::Client.new()
+    upload_key(s3client,newkeyblob,remote_filename,bucket,sse)
+    upload_string(s3client,newkeyplain,value,remote_filename,bucket,sse)
+  end
+
 
 end
